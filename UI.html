@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>学习通课件下载</title>
+    <link rel="icon" href="./static/icon.ico">
+    <link rel="stylesheet" href="./static/style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <script src="/static/script.js"></script>
+</head>
+
+<body>
+    <!-- 浮动提示框 -->
+    <div id="floating-alert" class="floating-alert"></div>
+
+    <header>
+        <h1 class="site-title">学习通课件下载</h1>
+    </header>
+
+    <main>
+        <!-- 登录界面 -->
+        <div class="login-container">
+            <h2 class="main-text">学习通登录</h2>
+            <form id="login-form" onsubmit="event.preventDefault(); login();">
+                <div class="form-group">
+                    <input type="text" id="phone" name="phone" placeholder="账号/手机号" required>
+                </div>
+                <div class="form-group">
+                    <input type="password" id="pwd" name="pwd" placeholder="密码" required>
+                </div>
+                <button type="submit" class="main-btn">登录</button>
+            </form>
+        </div>
+
+        <!-- 下载界面 -->
+        <div class="download-container">
+            <h2 class="main-text">课件下载</h2>
+            <div class="form-group">
+                <select id="course-select">
+                    <option value="">空</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <input type="text" id="save-path" placeholder="由于浏览器限制需要手动输入本地保存路径，不要带上“”" required>
+            </div>
+            <button class="main-btn" id="down-btn" onclick="startDownload()">开始下载</button>
+        </div>
+
+    </main>
+
+    <footer>
+        <div class="footer-notice" style="text-align:center;">
+            感谢您使用本网站。目前课件均以PDF格式下载，如有建议请提交<!--
+            --><a target="_blank" rel="nofollow" href="https://github.com/ZhaoXiTurtle/XXT_download_courseware" style="color:inherit">issue</a><!--
+            -->反馈</div>
+        <div class="copyright" style="text-align: right;"> Version 1.0 | Created by ZhaoXi</div>
+    </footer>
+</body>
+
+</html>
