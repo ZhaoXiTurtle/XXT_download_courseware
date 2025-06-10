@@ -10,7 +10,8 @@
   - flask库在中间充当服务器向网页和爬虫实现交互
 
 ## 🎇运行截图
-- ![image](https://github.com/user-attachments/assets/0db80f34-0a9a-4b50-bfc5-856dcc75338b)
+- ![QQ20250610-125002](https://github.com/user-attachments/assets/1ba2de48-8e8d-4397-bcd2-43962093ebcd)
+
 
 
  ## ✨TODO List
