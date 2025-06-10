@@ -53,9 +53,21 @@ function updateUI(data) {
     `;
 }
 
+function toggleDownloadType() {
+    const toggleBtn = document.getElementById('toggle-btn');
+    if (toggleBtn.textContent === '章节课件') {
+        toggleBtn.textContent = '资料课件';
+        toggleBtn.value = 'resource'
+    } else {
+        toggleBtn.textContent = '章节课件';
+        toggleBtn.value = 'chapter'
+    }
+}
+
 async function startDownload() {
     const courseUrl = document.getElementById('course-select').value;
-    const savePath = document.getElementById('save-path').value;
+    const content_type = document.getElementById('toggle-btn').value;
+    const savePath = document.getElementById('save-path').value.replaceAll('"', ''); // 删除双引号
     const alertBox = document.getElementById('alert-box');
     const btn = document.getElementById('down-btn');
     if (!courseUrl || !savePath) {
@@ -63,13 +75,13 @@ async function startDownload() {
         return;
     }
     btn.disabled = true;
-    showFloatingAlert('开始下载：', 'success');
+    showFloatingAlert('开始下载：' + content_type + '页面，请稍等', 'success');
     const response = await fetch('/download', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ courseUrl, savePath })
+        body: JSON.stringify({ courseUrl, content_type, savePath })
     });
 
     const data = await response.json();

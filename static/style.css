@@ -64,6 +64,7 @@ input {
     border-radius: 6px;
     font-size: 16px;
     transition: border-color 0.3s;
+    box-sizing: border-box;
 }
 
 input:focus {
@@ -80,7 +81,8 @@ input:focus {
     border-radius: 6px;
     font-size: 16px;
     cursor: pointer;
-    transition: background 0.3s;
+    flex: 2; /* 让下载按钮更宽一些 */
+    transition: background 0.3s, opacity 0.3s; /* 添加按钮点击过渡效果 */
 }
 
 .main-btn:hover {
@@ -93,12 +95,6 @@ input:focus {
     opacity: 0.7;
 }
 
-/* 添加按钮点击过渡效果 */
-.main-btn {
-    transition: background 0.3s, opacity 0.3s;
-}
-
-
 /* 下载界面样式 */
 .download-container {
     background: rgba(255, 255, 255, 0.95);
@@ -107,7 +103,48 @@ input:focus {
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
     width: 500px;
     height: 400px;
-    display: none; /* 初始隐藏 */
+    /*    display: none;  初始隐藏 */
+    display: none;
+}
+
+/* 切换按钮容器样式 */
+.btn-container {
+    display: flex;
+    gap: 10px; /* 按钮间距 */
+    width: 100%;
+}
+
+/* 切换按钮 */
+.toggle-type-btn {
+    flex: 1;
+    padding: 14px;
+    background: #f8f9fa;
+    color: #2d3436;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    font-size: 16px;
+    cursor: pointer;
+    transition: all 0.3s;
+    text-align: center;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.toggle-type-btn:hover {
+    background: #e9ecef;
+    border-color: #ced4da;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* 点击效果 - 模拟按压动画 */
+.toggle-type-btn:active {
+    transform: translateY(3px); /* 轻微下压效果 */
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1); /* 点击时阴影减小 */
+}
+
+.toggle-type-btn.active {
+    background: #0984e3;
+    color: white;
+    border-color: #0984e3;
 }
 
 select {

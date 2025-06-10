@@ -61,7 +61,7 @@ def download_route():
     data = request.get_json()
     global session
     try:
-        result = run_async(download_task(session, data['courseUrl'], data['savePath']))
+        result = run_async(download_task(session, data['courseUrl'], data['content_type'], data['savePath']))
         return jsonify({"message": result})
     except Exception as e:
         # 下载出现问题显示报错信息

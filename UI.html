@@ -44,7 +44,10 @@
             <div class="form-group">
                 <input type="text" id="save-path" placeholder="由于浏览器限制需要手动输入本地保存路径，不要带上“”" required>
             </div>
-            <button class="main-btn" id="down-btn" onclick="startDownload()">开始下载</button>
+            <div class="btn-container">
+                <button class="toggle-type-btn" id="toggle-btn" value="chapter" onclick="toggleDownloadType()">章节课件</button>
+                <button class="main-btn" id="down-btn" onclick="startDownload()">开始下载</button>
+            </div>
         </div>
 
     </main>

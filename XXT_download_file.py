@@ -1,5 +1,5 @@
 """
-学习通自动下载章节文件（异步）
+学习通自动下载课件（异步）
 """
 
 # 所有请求使用with语句进行关闭
@@ -12,8 +12,7 @@ import os
 
 PHONE = "加密后的"
 PWD = "加密后的"
-SAVE_HOME_PATH = r"C:\Users\xxxx\Desktop"
-
+SAVE_HOME_PATH = r"xxxx"
 headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0',
 }
@@ -65,7 +64,8 @@ async def get_course_params(session, course_url):
     async with session.get(url=course_url, headers=headers) as response:
         # 提取请求参数方便后续进行构造
         url = str(response.url)
-        param_list = {dic.split('=')[0]: dic.split('=')[1] for dic in url.split('?')[1].split('&')}
+        query_string = url.split('?')[1]
+        param_list = dict(pair.split("=") for pair in query_string.split('&'))
         params = {
             'courseid': param_list['courseid'],
             'clazzid': param_list['clazzid'],
@@ -77,7 +77,7 @@ async def get_course_params(session, course_url):
         return params
 
 
-async def get_all_chapter_knowledgeid(session, params):
+async def get_chapter_page(session, params):
     url = "https://mooc2-ans.chaoxing.com/mooc2-ans/mycourse/studentcourse"
     async with session.get(url, headers=headers, params=params) as response:
         tree = etree.HTML(await response.text())
@@ -85,18 +85,30 @@ async def get_all_chapter_knowledgeid(session, params):
         return knowledgeids
 
 
-async def get_pdf_info(session, canshu):
-    # 拿到32位关键加密参数
+async def get_resource_page(session, params):
+    url = "https://mooc2-ans.chaoxing.com/mooc2-ans/coursedata/stu-datalist"
+    async with session.get(url,headers=headers,params=params) as response:
+        tree = etree.HTML(await response.text())
+        # 拿到所有课件的objectid
+        objectid_list: list = tree.xpath("//ul/@objectid")
+        return objectid_list
+
+
+async def get_chapter_objectid(session, _params):
+    # 拿到32位objectid参数
     url = "https://mooc1.chaoxing.com/mooc-ans/nodedetailcontroller/visitnodedetail"
-    async with session.get(url, headers=headers, params=canshu) as response:
+    async with session.get(url, headers=headers, params=_params) as response:
         info = etree.HTML(await response.text()).xpath('//iframe/@data')
         if len(info) != 0:
-            encry = json.loads(info[0])['objectid']
+            objectid = json.loads(info[0])['objectid']
+            return objectid
         else:
             return None
 
-    # 通过encry构建请求，获取pdf的最终下载链接
-    url = f"https://mooc1.chaoxing.com/ananas/status/{encry}"
+
+async def get_pdf_info(session, objectid):
+    # 通过objectid构建请求，获取pdf的最终下载链接
+    url = f"https://mooc1.chaoxing.com/ananas/status/{objectid}"
     # 这里必须指明referer
     _headers = {
         "Referer": "https://mooc1.chaoxing.com/ananas/modules/video/index.html?v=2024-1128-1842",
@@ -113,7 +125,6 @@ async def get_pdf_info(session, canshu):
 
 async def download_pdf(session, save_home_path, filename: str, pdf_url: str):
     # 判断文件名后缀是否正确,以url后缀为准
-    # TODO ppt格式也是一样的吗
     url_extension = pdf_url.rsplit('.', 1)[-1]
     if url_extension not in filename:
         filename = filename.rsplit('.', 1)[0] + '.' + url_extension
@@ -140,7 +151,8 @@ async def login_task(session, phone, pwd):
     return {"status": True, "courses": courses_info}
 
 
-async def download_task(session, course_url, save_home_path):
+async def download_task(session, course_url, content_type, save_home_path):
+    # content_type = chapter / resource
     # 先检查下保存路径有没有问题!
     if not os.path.exists(save_home_path):
         return "保存路径不存在！请重新修改路径"
@@ -150,27 +162,39 @@ async def download_task(session, course_url, save_home_path):
     # 请求指定课程url获取新的请求参数
     params = await get_course_params(session, course_url)
     print("params: ",params)
-    # 使用参数构造获取所有章节id的请求
-    knowledgeids: list = await get_all_chapter_knowledgeid(session, params)
-    if not knowledgeids:
-        return "似乎没有课件要下载！"
-    print("knowledgeids: ", knowledgeids)
-    # 每个章节分别发送请求
-    pdf_info_tasks = []
-    for knowid in knowledgeids:
-        canshu = {"courseId": params["courseid"],
-                  "knowledgeId": knowid.strip('cur')}
-        pdf_info_tasks.append(get_pdf_info(session, canshu))
-    name_pdf_list = await asyncio.gather(*pdf_info_tasks)
-    if not name_pdf_list:
+    # 章节页面需要多一步获取konwledgeid再得到objectid
+    if content_type == "chapter":
+        # 使用参数构造获取所有章节id的请求
+        knowledgeids: list = await get_chapter_page(session, params)
+        if not knowledgeids:
+            return "未找到有效章节！"
+        print("knowledgeids: ", knowledgeids)
+        # 每个章节分别发送请求
+        objectid_tasks = []
+        for knowid in knowledgeids:
+            _params = {"courseId": params["courseid"],
+                      "knowledgeId": knowid.strip('cur')}
+            objectid_tasks.append(get_chapter_objectid(session, _params))
+        objectid_list = await asyncio.gather(*objectid_tasks)
+    elif content_type == "resource":
+        objectid_list = await get_resource_page(session, params)
+    if not any(objectid_list):
         return "未找到有效课件！"
-    print(name_pdf_list)
+    print(objectid_list)
+
+    # 获取下载地址和文件名
+    pdf_info_task = []
+    for objectid in objectid_list:
+        if objectid:
+            pdf_info_task.append(get_pdf_info(session,objectid))
+    pdf_name_url_list = await asyncio.gather(*pdf_info_task)
+    print(pdf_name_url_list)
     # 下载所有文件
     download_tasks = []
-    element: BaseException | tuple
-    for element in name_pdf_list:
-        if element:
-            filename, pdf_url = element
+    name_url: None | tuple
+    for name_url in pdf_name_url_list:
+        if name_url:
+            filename, pdf_url = name_url
             download_tasks.append(download_pdf(session, save_home_path, filename, pdf_url))
     await asyncio.gather(*download_tasks)
 
@@ -181,7 +205,9 @@ async def main(phone, pwd, path):
         print(info)
         name = input("输入目标课程的全称：")
         url = info['courses'][name]
-        result = await download_task(session, url, path)
+        content_type = input("输入要爬取的类型，回车为chapter,1为resource")
+        content_type = "chapter" if not content_type else 'resource'
+        result = await download_task(session, url, content_type,path)
         print(result)
 
 
