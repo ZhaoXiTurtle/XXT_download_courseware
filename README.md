@@ -11,7 +11,8 @@
   - fastapi库在中间充当服务器向网页和爬虫实现交互
 
 ## 🎇运行截图
-- ![QQ20250610-125002](https://github.com/user-attachments/assets/1ba2de48-8e8d-4397-bcd2-43962093ebcd)
+- <img width="1126" height="777" alt="截图" src="https://github.com/user-attachments/assets/f2f919c5-9971-44cf-8b98-f984fecb1f91" />
+
 
 
 
