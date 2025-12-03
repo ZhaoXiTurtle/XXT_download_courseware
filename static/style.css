@@ -38,17 +38,52 @@ main {
 /* 登录界面样式 */
 .login-container {
     background: rgba(255, 255, 255, 0.95);
-    padding: 1px 60px 50px;
+    /* padding: 1px 60px 50px; */
     border-radius: 12px;
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
-    width: 500px;
-    height: 300px;
+    /* 合并二维码相关布局样式 */
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+    width: 600px;
+    height: 330px;
+}
+
+/* 登录表单容器 */
+.login-form-wrapper {
+    width: 57%;
+}
+
+/* 二维码容器 */
+.qrcode-container {
+    width: 43%;
+    text-align: center;
+}
+
+/* 二维码图片 */
+.qrcode-image {
+    width: 70%;
+    /* height: 60%; */
+    border: 1px solid #eee;
+    padding: 9px;
+    margin: 0 auto 10px;
+}
+
+/* 提示文字 */
+.hint {
+    font-size: 12px;
+    color: #666;
+    margin: 0;
 }
 
 .main-text {
     text-align: center;
     color: #2d3436;
-    margin-bottom: 30px;
+    margin-bottom: 20px;
+    margin-top: -10px;
     font-size: 1.8em;
     padding: 10px;
 }
@@ -98,12 +133,11 @@ input:focus {
 /* 下载界面样式 */
 .download-container {
     background: rgba(255, 255, 255, 0.95);
-    padding: 1px 60px 50px;
+    padding: 20px 60px 40px;
     border-radius: 12px;
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
     width: 500px;
-    height: 400px;
-    /*    display: none;  初始隐藏 */
+    height: 300px;
     display: none;
 }
 
@@ -165,11 +199,16 @@ select {
     transform: translateX(-50%);
     padding: 15px 30px;
     border-radius: 6px;
-    display: none;
+    display: none; /* 初始隐藏 */
     text-align: center;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     z-index: 1000;
-    animation: fadeIn 0.3s, fadeOut 0.3s 3.3s;
+    animation: fadeIn 0.3s, fadeOut 0.3s 3.3s; /* 普通弹窗自动淡出 */
+}
+
+/* 持久化弹窗的修饰类（仅覆盖动画，其他样式继承） */
+.floating-alert--persistent {
+    animation: fadeIn 0.3s; /* 只保留淡入，去掉自动淡出 */
 }
 
 @keyframes fadeIn {
@@ -194,6 +233,125 @@ select {
     border: 1px solid #f5c6cb;
 }
 
+/* 模态对话框样式 */
+.modal {
+    display: none; /* 默认隐藏 */
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0, 0, 0, 0.5);
+}
+
+.modal-content {
+    background-color: #ffffff;
+    margin: 15% auto;
+    padding: 30px; /* 增加内边距 */
+    border: 1px solid #e0e0e0; /* 与输入框边框色一致 */
+    border-radius: 12px; /* 与登录容器圆角一致 */
+    width: 80%;
+    max-width: 400px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+}
+
+/* 关闭按钮优化 */
+.close {
+    color: #aaa;
+    float: right;
+    font-size: 24px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.close:hover {
+    color: #333;
+}
+
+/* 标题样式调整 */
+.modal-content h2 {
+    margin: 0 0 24px;
+    color: #333;
+    font-size: 18px;
+    text-align: center;
+}
+
+/* 信息容器样式 */
+.info-container {
+    margin: 0 0 28px;
+    padding: 16px;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+}
+
+/* 信息项样式 */
+.info-item {
+    display: flex;
+    margin-bottom: 12px;
+    line-height: 1.5;
+}
+
+.info-item:last-child {
+    margin-bottom: 0;
+}
+
+/* 标签与内容样式区分 */
+.info-label {
+    flex: 0 0 90px;
+    color: #666;
+    font-size: 14px;
+}
+
+.info-value {
+    flex: 1;
+    color: #333;
+    font-size: 14px;
+    word-break: break-all; /* 处理长路径换行 */
+}
+
+/* 按钮区域样式 */
+.modal-buttons {
+    display: flex;
+    gap: 16px; /* 按钮间距 */
+    justify-content: center;
+    margin-top: 12px;
+}
+
+.confirm-btn, .cancel-btn {
+    padding: 10px 24px;
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.confirm-btn {
+    background: #0984e3;
+    color: white;
+    border: none;
+}
+
+.confirm-btn:hover {
+    background: #086db5;
+    transform: translateY(-1px);
+}
+
+.cancel-btn {
+    background: #f8f9fa;
+    color: #2d3436;
+    border: 1px solid #e0e0e0;
+}
+
+.cancel-btn:hover {
+    background: #e9ecef;
+    border-color: #ced4da;
+    transform: translateY(-1px);
+}
+
+
 
 /* 页脚样式 */
 footer {
@@ -205,4 +363,15 @@ footer {
     bottom:0em;
     right:0em;
     width:100%;
+}
+
+/* 响应式调整 */
+@media (max-width: 600px) {
+    .login-container {
+        flex-direction: column;
+    }
+    .login-form-wrapper, .qrcode-container {
+        width: 100%;
+        margin-bottom: 20px;
+    }
 }

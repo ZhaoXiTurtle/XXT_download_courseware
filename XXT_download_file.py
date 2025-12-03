@@ -8,17 +8,19 @@ import aiohttp
 from lxml import etree
 import json
 import os
-
+from pathlib import Path
 
 PHONE = "加密后的"
 PWD = "加密后的"
 SAVE_HOME_PATH = r"xxxx"
 headers = {
+    'Origin': 'https://passport2.chaoxing.com',
+    'Referer': 'https://passport2.chaoxing.com/login?fid=&newversion=true&refer=https%3A%2F%2Fi.chaoxing.com',
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0',
 }
 
 
-async def login(session, phone, pwd) -> bool:
+async def login(session, phone, pwd) -> dict:
     # 学习通固定加密参数登录,获取并保存cookies
     url = 'https://passport2.chaoxing.com/fanyalogin'
     data = {
@@ -35,7 +37,56 @@ async def login(session, phone, pwd) -> bool:
     async with session.post(url=url, data=data, headers=headers) as response:
         # 返回是含status的字典文本格式，直接粗暴判断了
         text = await response.text()
-        return "true" in text
+        return {'status': "true" in text}
+
+
+# 二维码登录相关函数
+async def get_qrcode(session) -> dict:
+    """获取登录二维码"""
+    params = {
+        'fid': '',
+        'newversion': 'true',
+        'refer': 'https://i.chaoxing.com',
+    }
+
+    # 获取uuid和enc
+    async with session.get(
+            'https://passport2.chaoxing.com/login',
+            headers=headers,
+            params=params
+    ) as response:
+        text = await response.text()
+        tree = etree.HTML(text)
+        uuid = tree.xpath("//*[@id='uuid']/@value")
+        enc = tree.xpath("//*[@id='enc']/@value")
+
+        if not (uuid and enc):
+            return {"status": False}
+        else:
+            return {"status": True,
+                    "enc": enc[0],
+                    "uuid": uuid[0],
+                    "qrcode_url": f"https://passport2.chaoxing.com/createqr?uuid={uuid[0]}&fid=-1"
+                    }
+
+
+async def check_qrcode_status(session, uuid, enc) -> dict:
+    """检查二维码扫描状态"""
+    data = {
+        'enc': enc,
+        'uuid': uuid,
+        'doubleFactorLogin': '0'
+    }
+
+    async with session.post(
+            'https://passport2.chaoxing.com/getauthstatus/v2',
+            headers=headers,
+            data=data
+    ) as response:
+        # 垃圾学习通这里响应类型是text/html，得手动解析json
+        text = await response.text()
+        result = json.loads(text)
+        return result
 
 
 async def get_all_course_inf(session) -> dict:
@@ -87,7 +138,7 @@ async def get_chapter_page(session, params):
 
 async def get_resource_page(session, params):
     url = "https://mooc2-ans.chaoxing.com/mooc2-ans/coursedata/stu-datalist"
-    async with session.get(url,headers=headers,params=params) as response:
+    async with session.get(url, headers=headers, params=params) as response:
         tree = etree.HTML(await response.text())
         # 拿到所有课件的objectid
         objectid_list: list = tree.xpath("//ul/@objectid")
@@ -154,14 +205,18 @@ async def login_task(session, phone, pwd):
 async def download_task(session, course_url, content_type, save_home_path):
     # content_type = chapter / resource
     # 先检查下保存路径有没有问题!
+    # 如果有扩展名视为文件路径
+    if os.path.isfile(save_home_path) or os.path.splitext(save_home_path)[1]:
+        return "请提供文件夹路径，而非文件路径！"
+    # 不存在就新建
     if not os.path.exists(save_home_path):
-        return "保存路径不存在！请重新修改路径"
-    else:
-        if not os.path.isdir(save_home_path):
-            return "保存路径不是正确的目录"
+        try:
+            os.makedirs(save_home_path)
+        except OSError as e:
+            return f"无法创建新目录:{e}"
     # 请求指定课程url获取新的请求参数
     params = await get_course_params(session, course_url)
-    print("params: ",params)
+    print("params: ", params)
     # 章节页面需要多一步获取konwledgeid再得到objectid
     if content_type == "chapter":
         # 使用参数构造获取所有章节id的请求
@@ -173,7 +228,7 @@ async def download_task(session, course_url, content_type, save_home_path):
         objectid_tasks = []
         for knowid in knowledgeids:
             _params = {"courseId": params["courseid"],
-                      "knowledgeId": knowid.strip('cur')}
+                       "knowledgeId": knowid.strip('cur')}
             objectid_tasks.append(get_chapter_objectid(session, _params))
         objectid_list = await asyncio.gather(*objectid_tasks)
     elif content_type == "resource":
@@ -186,7 +241,7 @@ async def download_task(session, course_url, content_type, save_home_path):
     pdf_info_task = []
     for objectid in objectid_list:
         if objectid:
-            pdf_info_task.append(get_pdf_info(session,objectid))
+            pdf_info_task.append(get_pdf_info(session, objectid))
     pdf_name_url_list = await asyncio.gather(*pdf_info_task)
     print(pdf_name_url_list)
     # 下载所有文件
@@ -207,7 +262,7 @@ async def main(phone, pwd, path):
         url = info['courses'][name]
         content_type = input("输入要爬取的类型，回车为chapter,1为resource")
         content_type = "chapter" if not content_type else 'resource'
-        result = await download_task(session, url, content_type,path)
+        result = await download_task(session, url, content_type, path)
         print(result)
 
 

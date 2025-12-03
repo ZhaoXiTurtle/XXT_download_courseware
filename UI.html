@@ -7,20 +7,20 @@
     <link rel="icon" href="./static/icon.ico">
     <link rel="stylesheet" href="./static/style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
-    <script src="/static/script.js"></script>
+    <script src="./static/script.js"></script>
 </head>
 
 <body>
-    <!-- 浮动提示框 -->
-    <div id="floating-alert" class="floating-alert"></div>
 
-    <header>
-        <h1 class="site-title">学习通课件下载</h1>
-    </header>
+<header>
+    <h1 class="site-title">学习通课件下载</h1>
+</header>
 
-    <main>
-        <!-- 登录界面 -->
-        <div class="login-container">
+<main>
+    <!-- 登录界面 -->
+    <div class="login-container">
+        <!-- 密码登录表单 -->
+        <div class="login-form-wrapper">
             <h2 class="main-text">学习通登录</h2>
             <form id="login-form" onsubmit="event.preventDefault(); login();">
                 <div class="form-group">
@@ -33,32 +33,72 @@
             </form>
         </div>
 
-        <!-- 下载界面 -->
-        <div class="download-container">
-            <h2 class="main-text">课件下载</h2>
-            <div class="form-group">
-                <select id="course-select">
-                    <option value="">空</option>
-                </select>
+        <!-- 二维码登录 -->
+        <div class="qrcode-container">
+            <img src="" alt="学习通二维码" class="qrcode-image" id="QR_img">
+            <p class="hint">扫码登录更安全</p>
+        </div>
+    </div>
+
+    <!-- 下载界面 -->
+    <div class="download-container">
+        <h2 class="main-text">课件下载</h2>
+        <div class="form-group">
+            <select id="course-select">
+                <option value="">空</option>
+            </select>
+<!--        </div>-->
+<!--        <div class="form-group">-->
+            <input type="text" id="save-path" placeholder="请输入课件保存路径，不要加上''" data-default-value="D:\XXT_courses">
+            <p class="hint">如不输入，默认保存到“ <strong>D:\XXT_courses</strong> ”文件夹</p>
+        </div>
+        <div class="btn-container">
+            <button class="toggle-type-btn" id="toggle-btn" value="chapter" onclick="toggleDownloadType()">章节课件
+            </button>
+            <button class="main-btn" id="down-btn" onclick="confirmDownload()">开始下载</button>
+        </div>
+    </div>
+
+</main>
+
+<footer>
+    <div class="footer-notice" style="text-align:center;">
+        感谢您使用本网站。目前课件均以PDF格式下载，如有建议请提交<!--
+            --><a target="_blank" rel="nofollow" href="https://github.com/ZhaoXiTurtle/XXT_download_courseware"
+                  style="color:inherit">issue</a><!--
+            -->反馈
+    </div>
+    <div class="copyright" style="text-align: right;"> Version 2.0 | Created by ZhaoXi</div>
+</footer>
+
+<!-- 浮动提示框 -->
+<div id="floating-alert" class="floating-alert"></div>
+<!-- 模态对话框 -->
+<div id="confirm-modal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeModal()">&times;</span>
+        <h2>确认下载信息</h2>
+        <!-- 重构信息展示区域 -->
+        <div class="info-container">
+            <div class="info-item">
+                <span class="info-label">课程名：</span>
+                <span class="info-value" id="course-info"></span>
             </div>
-            <div class="form-group">
-                <input type="text" id="save-path" placeholder="由于浏览器限制需要手动输入本地保存路径，不要带上“”" required>
+            <div class="info-item">
+                <span class="info-label">课件类型：</span>
+                <span class="info-value" id="type-info"></span>
             </div>
-            <div class="btn-container">
-                <button class="toggle-type-btn" id="toggle-btn" value="chapter" onclick="toggleDownloadType()">章节课件</button>
-                <button class="main-btn" id="down-btn" onclick="startDownload()">开始下载</button>
+            <div class="info-item">
+                <span class="info-label">保存路径：</span>
+                <span class="info-value" id="path-info"></span>
             </div>
         </div>
-
-    </main>
-
-    <footer>
-        <div class="footer-notice" style="text-align:center;">
-            感谢您使用本网站。目前课件均以PDF格式下载，如有建议请提交<!--
-            --><a target="_blank" rel="nofollow" href="https://github.com/ZhaoXiTurtle/XXT_download_courseware" style="color:inherit">issue</a><!--
-            -->反馈</div>
-        <div class="copyright" style="text-align: right;"> Version 2.0 | Created by ZhaoXi</div>
-    </footer>
+        <div class="modal-buttons">
+            <button class="confirm-btn" onclick="startDownload()">确定</button>
+            <button class="cancel-btn" onclick="closeModal()">取消</button>
+        </div>
+    </div>
+</div>
 </body>
 
 </html>
