@@ -7,7 +7,49 @@
     <link rel="icon" href="./static/icon.ico">
     <link rel="stylesheet" href="./static/style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
-    <script src="./static/script.js"></script>
+    <script src="./static/script.js?v=4"></script>
+    <style>
+        /* 原样式把下载框写死 height:300px，加了章节面板必然溢出、盖住按钮，这里放开高度；
+           顺便把左右内边距收窄、卡片略加宽，章节标题才有地方换行 */
+        .download-container {
+            height: auto; min-height: 300px;
+            width: 520px; padding: 20px 34px 34px;
+        }
+
+        /* 全局 input{width:100%;padding:12px} 会把复选框撑满整行、把文字顶到最右边，必须显式覆盖 */
+        input[type="checkbox"] {
+            width: 16px; height: 16px; min-width: 16px; flex: 0 0 16px;
+            padding: 0; margin: 2px 0 0 0; border-radius: 3px;
+            accent-color: #0984e3; cursor: pointer;
+        }
+
+        .chapter-picker { margin: 2px 0 16px; }
+        .chapter-toolbar {
+            display: flex; align-items: center; gap: 12px;
+            margin-bottom: 8px; font-size: 13px; color: #444;
+        }
+        .chapter-check {
+            display: flex; align-items: center; gap: 6px;
+            cursor: pointer; user-select: none; font-size: 13px;
+        }
+        .chapter-list {
+            max-height: 210px; overflow-y: auto;
+            border: 1px solid #e3e6ea; border-radius: 8px;
+            background: #fafbfc; padding: 6px 12px;
+        }
+        .chapter-item {
+            display: flex; align-items: flex-start; gap: 8px;
+            padding: 6px 2px; font-size: 13px; color: #333; line-height: 1.45;
+            text-align: left; border-bottom: 1px dashed #eceff2;
+            cursor: pointer;
+        }
+        .chapter-item:last-child { border-bottom: none; }
+        .chapter-item:hover { background: #f1f6fd; }
+        .chapter-item span {
+            flex: 1 1 auto; min-width: 0;
+            text-align: left; word-break: break-word;
+        }
+    </style>
 </head>
 
 <body>
@@ -35,8 +77,8 @@
 
         <!-- 二维码登录 -->
         <div class="qrcode-container">
-            <img src="" alt="学习通二维码" class="qrcode-image" id="QR_img">
-            <p class="hint">扫码登录更安全</p>
+            <img src="" alt="学习通二维码" class="qrcode-image" id="QR_img" onerror="qrImageFailed(this)">
+            <p class="hint" id="QR_hint">扫码登录更安全</p>
         </div>
     </div>
 
@@ -44,7 +86,7 @@
     <div class="download-container">
         <h2 class="main-text">课件下载</h2>
         <div class="form-group">
-            <select id="course-select">
+            <select id="course-select" onchange="onCourseChange()">
                 <option value="">空</option>
             </select>
 <!--        </div>-->
@@ -52,6 +94,16 @@
             <input type="text" id="save-path" placeholder="请输入课件保存路径，不要加上''" data-default-value="D:\XXT_courses">
             <p class="hint">如不输入，默认保存到“ <strong>D:\XXT_courses</strong> ”文件夹</p>
         </div>
+
+        <!-- 章节多选：只在「章节课件」模式下出现 -->
+        <div class="chapter-picker" id="chapter-picker" style="display:none">
+            <div class="chapter-toolbar">
+                <label class="chapter-check"><input type="checkbox" id="chapter-all" onchange="toggleAllChapters(this)"> 全选</label>
+                <span class="hint" id="chapter-count"></span>
+            </div>
+            <div class="chapter-list" id="chapter-list"></div>
+        </div>
+
         <div class="btn-container">
             <button class="toggle-type-btn" id="toggle-btn" value="chapter" onclick="toggleDownloadType()">章节课件
             </button>

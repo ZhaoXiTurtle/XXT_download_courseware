@@ -23,6 +23,11 @@ window.onload = function () {
     refreshQrcode();
 }
 
+// 二维码图片加载失败时的兜底提示（正常情况不该触发：图片是服务端内联的 base64）
+function qrImageFailed(img) {
+    img.alt = '二维码加载失败，请按 Ctrl+F5 刷新';
+    showFloatingAlert('二维码加载失败，请按 Ctrl+F5 强制刷新页面', 'error');
+}
 
 // 刷新二维码
 async function refreshQrcode() {
@@ -36,13 +41,16 @@ async function refreshQrcode() {
         const response = await fetch('/get_qrcode');
         const data = await response.json();
         if (data.status) {
-            // 显示二维码
-            document.getElementById('QR_img').src = data.qrcode_url;
+            // 显示二维码：服务端已把图片按 base64 内联返回，避免浏览器另开
+            // 一个 session 去拉 createqr，导致服务端轮询时「会话已失效」
+            document.getElementById('QR_img').src = data.qrcode_data || data.qrcode_url;
+            document.getElementById('QR_hint').textContent = '用学习通 App 扫码';
             // 稍微等待一下，防止二维码还没访问完就开始轮询
             await new Promise(resolve => setTimeout(resolve, 2000));
             // 开始轮询检查扫码状态
             qrcodeInterval = setInterval(() => checkQrcodeStatus(data.uuid, data.enc), 3000);
         } else {
+            document.getElementById('QR_hint').textContent = '获取二维码失败，请刷新页面';
             showFloatingAlert('获取二维码失败', 'error');
         }
     } catch (error) {
@@ -61,8 +69,9 @@ async function checkQrcodeStatus(uuid, enc) {
         showFloatingAlert('登录成功', 'success');
         await get_courses();
 
-    } else if (data.mes === "二维码已失效") {
-        // debugger
+    } else if (data.mes && data.mes.includes('失效')) {
+        // 学习通可能回「二维码已失效」也可能回「会话已失效，请刷新页面重试」，
+        // 两种都要换一张新的二维码，否则页面会一直静默轮询下去
         await refreshQrcode();
         showFloatingAlert('二维码已自动刷新', 'success');
     }
@@ -125,6 +134,98 @@ function toggleDownloadType() {
         toggleBtn.textContent = '章节课件';
         toggleBtn.value = 'chapter'
     }
+    syncChapterPicker();
+}
+
+// ---------- 章节多选 ----------
+let chapterCache = {};        // 课程 url -> [{id, title}]
+let chapterLoadState = 'idle'; // idle | loading | ok | failed
+
+function currentCourseUrl() {
+    return document.getElementById('course-select').value;
+}
+
+function syncChapterPicker() {
+    const picker = document.getElementById('chapter-picker');
+    const type = document.getElementById('toggle-btn').value;
+    const url = currentCourseUrl();
+    if (type !== 'chapter' || !url) {
+        picker.style.display = 'none';
+        return;
+    }
+    picker.style.display = 'block';
+    loadChapters(url);
+}
+
+function onCourseChange() {
+    syncChapterPicker();
+}
+
+async function loadChapters(url) {
+    const list = document.getElementById('chapter-list');
+    const count = document.getElementById('chapter-count');
+    if (chapterCache[url]) {
+        renderChapters(chapterCache[url]);
+        return;
+    }
+    chapterLoadState = 'loading';
+    list.innerHTML = '<p class="hint" style="margin:6px 0">正在获取章节列表…</p>';
+    count.textContent = '';
+    try {
+        const resp = await fetch('/get_chapters?url=' + encodeURIComponent(url));
+        const data = await resp.json();
+        if (data.status) {
+            chapterCache[url] = data.chapters;
+            chapterLoadState = 'ok';
+            renderChapters(data.chapters);
+        } else {
+            chapterLoadState = 'failed';
+            list.innerHTML = '<p class="hint" style="margin:6px 0;color:#c0392b">获取章节失败：'
+                + (data.message || '未知错误') + '</p>'
+                + '<p class="hint" style="margin:6px 0">这时仍可点「开始下载」，会按整门课处理。</p>';
+            count.textContent = '';
+        }
+    } catch (e) {
+        chapterLoadState = 'failed';
+        list.innerHTML = '<p class="hint" style="margin:6px 0;color:#c0392b">获取章节失败：' + e + '</p>';
+    }
+}
+
+function renderChapters(chapters) {
+    const list = document.getElementById('chapter-list');
+    if (!chapters.length) {
+        list.innerHTML = '<p class="hint" style="margin:6px 0">这门课没有解析到章节</p>';
+        return;
+    }
+    list.innerHTML = chapters.map((c, i) => `
+        <label class="chapter-item">
+            <input type="checkbox" class="chapter-box" value="${c.id}" checked onchange="updateChapterCount()">
+            <span>${i + 1}. ${c.title}</span>
+        </label>`).join('');
+    document.getElementById('chapter-all').checked = true;
+    updateChapterCount();
+}
+
+function toggleAllChapters(box) {
+    document.querySelectorAll('.chapter-box').forEach(el => { el.checked = box.checked; });
+    updateChapterCount();
+}
+
+function getSelectedChapters() {
+    return Array.from(document.querySelectorAll('.chapter-box'))
+        .filter(el => el.checked)
+        .map(el => el.value);
+}
+
+function updateChapterCount() {
+    const boxes = document.querySelectorAll('.chapter-box');
+    if (!boxes.length) return;
+    const picked = getSelectedChapters().length;
+    document.getElementById('chapter-count').textContent =
+        `共 ${boxes.length} 章，已选 ${picked} 章`;
+    const all = document.getElementById('chapter-all');
+    all.checked = picked === boxes.length;
+    all.indeterminate = picked > 0 && picked < boxes.length;
 }
 
 function confirmDownload() {
@@ -141,14 +242,34 @@ function confirmDownload() {
         return;
     }
 
+    let chapters = null;
+    if (contentType === 'chapter' && chapterLoadState === 'loading') {
+        showFloatingAlert('章节列表还在加载，稍等一下再点', 'error');
+        return;
+    }
+    if (contentType === 'chapter' && chapterLoadState === 'ok') {
+        chapters = getSelectedChapters();
+        if (!chapters.length) {
+            showFloatingAlert('请至少勾选一个章节', 'error');
+            return;
+        }
+    }
+
     courses_info.name = courseName
     courses_info.url = courseUrl
     courses_info.type = contentType
     courses_info.path = savePath
+    courses_info.chapters = chapters
 
     // 设置模态对话框中的内容
     document.getElementById('course-info').textContent = courseName;
-    document.getElementById('type-info').textContent = contentType;
+    let typeText = contentType === 'chapter' ? '章节课件' : '资料课件';
+    if (chapters) {
+        typeText += `（已选 ${chapters.length} 章）`;
+    } else if (contentType === 'chapter') {
+        typeText += '（整门课）';
+    }
+    document.getElementById('type-info').textContent = typeText;
     document.getElementById('path-info').textContent = savePath;
 
     // 显示模态对话框
