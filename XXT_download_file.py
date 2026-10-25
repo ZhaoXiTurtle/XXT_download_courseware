@@ -6,8 +6,10 @@
 import asyncio
 import aiohttp
 from lxml import etree
+import base64
 import json
 import os
+import re
 from pathlib import Path
 
 PHONE = "加密后的"
@@ -42,32 +44,58 @@ async def login(session, phone, pwd) -> dict:
 
 # 二维码登录相关函数
 async def get_qrcode(session) -> dict:
-    """获取登录二维码"""
+    """获取登录二维码
+
+    注意：学习通把 uuid 绑在“取二维码图片”那个请求的 JSESSIONID 上。
+    如果让浏览器直接去拉 createqr，服务端这条 session 就绑不上了，
+    之后 getauthstatus/v2 只会回「会话已失效」。
+    所以这里必须由服务端自己把图片取回来，以 base64 data URI 交给前端。
+    """
     params = {
         'fid': '',
         'newversion': 'true',
         'refer': 'https://i.chaoxing.com',
     }
 
-    # 获取uuid和enc
-    async with session.get(
-            'https://passport2.chaoxing.com/login',
-            headers=headers,
-            params=params
-    ) as response:
-        text = await response.text()
+    for _ in range(2):
+        # 获取uuid和enc
+        async with session.get(
+                'https://passport2.chaoxing.com/login',
+                headers=headers,
+                params=params
+        ) as response:
+            text = await response.text()
         tree = etree.HTML(text)
         uuid = tree.xpath("//*[@id='uuid']/@value")
         enc = tree.xpath("//*[@id='enc']/@value")
-
         if not (uuid and enc):
-            return {"status": False}
+            continue
+
+        # 用同一个 session 取二维码图片，完成 uuid 与 JSESSIONID 的绑定
+        async with session.get(
+                'https://passport2.chaoxing.com/createqr',
+                headers=headers,
+                params={'uuid': uuid[0], 'fid': '-1'},
+        ) as img_response:
+            img_bytes = await img_response.read()
+
+        if img_bytes[:8] == b'\x89PNG\r\n\x1a\n':
+            mime = 'image/png'
+        elif img_bytes[:3] == b'\xff\xd8\xff':
+            mime = 'image/jpeg'
         else:
-            return {"status": True,
-                    "enc": enc[0],
-                    "uuid": uuid[0],
-                    "qrcode_url": f"https://passport2.chaoxing.com/createqr?uuid={uuid[0]}&fid=-1"
-                    }
+            # 拿到的是错误页而不是图片，重来一次
+            continue
+
+        b64 = base64.b64encode(img_bytes).decode()
+        return {"status": True,
+                "enc": enc[0],
+                "uuid": uuid[0],
+                "qrcode_data": f"data:{mime};base64,{b64}",
+                "qrcode_url": f"https://passport2.chaoxing.com/createqr?uuid={uuid[0]}&fid=-1"
+                }
+
+    return {"status": False}
 
 
 async def check_qrcode_status(session, uuid, enc) -> dict:
@@ -112,28 +140,118 @@ async def get_all_course_inf(session) -> dict:
 
 
 async def get_course_params(session, course_url):
+    """从课程链接（跟随跳转后的最终地址）里取 courseid/clazzid/cpi/t/enc。
+
+    学习通不同版本的课程链接参数不一样：老链接是
+    ?courseid=&clazzid=&cpi=&enc=&t=，新版本常常只剩 ?courseid=&clazzid=&enc=。
+    上游直接 param_list['cpi'] 会抛 KeyError —— 这是「下载失败」最常见的原因之一。
+    这里改成「地址栏优先、页面正文兜底、实在没有就留空」。
+    """
     async with session.get(url=course_url, headers=headers) as response:
-        # 提取请求参数方便后续进行构造
-        url = str(response.url)
-        query_string = url.split('?')[1]
-        param_list = dict(pair.split("=") for pair in query_string.split('&'))
-        params = {
-            'courseid': param_list['courseid'],
-            'clazzid': param_list['clazzid'],
-            'cpi': param_list['cpi'],
-            'ut': 's',
-            't': param_list['t'],
-            'stuenc': param_list['enc']
-        }
-        return params
+        final_url = str(response.url)
+        page = await response.text()
+
+    query_string = final_url.split('?', 1)[1] if '?' in final_url else ''
+    param_list = {}
+    for pair in query_string.split('&'):
+        if '=' in pair:
+            k, v = pair.split('=', 1)
+            param_list[k] = v
+
+    def pick(*names):
+        for name in names:
+            if param_list.get(name):
+                return param_list[name]
+            found = re.search(rf'{name}=([^&"\'\s>]+)', page)
+            if found:
+                return found.group(1)
+        return ''
+
+    return {
+        'courseid': pick('courseid'),
+        'clazzid': pick('clazzid'),
+        'cpi': pick('cpi'),
+        'ut': 's',
+        't': pick('t'),
+        'stuenc': pick('enc', 'stuenc'),
+    }
+
+
+CHAPTER_PAGE_URL = "https://mooc2-ans.chaoxing.com/mooc2-ans/mycourse/studentcourse"
+
+
+async def _fetch_chapter_page(session, params):
+    async with session.get(CHAPTER_PAGE_URL, headers=headers, params=params) as response:
+        return etree.HTML(await response.text())
+
+
+def _iter_chapter_nodes(tree):
+    """返回章节节点。学习通改版过几次，节点 id 从 cur123 变过，这里两种都认。"""
+    nodes = tree.xpath("//*[@class='chapter_item']")
+    if nodes:
+        return nodes
+    # 兜底：老页面是一层嵌套，直接取带 cur 前缀的 id
+    return [node for node in tree.xpath("//*[@id]") if str(node.get('id', '')).startswith('cur')]
+
+
+def _chapter_id(node):
+    candidates = [node.get('id')] + node.xpath(".//@id")
+    for raw in candidates:
+        if not raw:
+            continue
+        found = re.search(r'(\d{5,})', str(raw))
+        if found:
+            return found.group(1)
+    return None
+
+
+def _chapter_title(node):
+    for expr in (".//*[@class='chapter_title']//text()",
+                 ".//*[@class='chapter_text']/@title",
+                 ".//@title"):
+        values = [v.strip() for v in node.xpath(expr) if isinstance(v, str) and v.strip()]
+        if values:
+            return ' '.join(values)[:80]
+    text = ' '.join(t.strip() for t in node.xpath(".//text()") if t.strip())
+    return text[:80]
 
 
 async def get_chapter_page(session, params):
-    url = "https://mooc2-ans.chaoxing.com/mooc2-ans/mycourse/studentcourse"
-    async with session.get(url, headers=headers, params=params) as response:
-        tree = etree.HTML(await response.text())
-        knowledgeids: list = tree.xpath("//*[@class='chapter_item']//@id")
-        return knowledgeids
+    """返回整门课的章节 id 列表（兼容老调用）。"""
+    tree = await _fetch_chapter_page(session, params)
+    ids, seen = [], set()
+    for node in _iter_chapter_nodes(tree):
+        cid = _chapter_id(node)
+        if cid and cid not in seen:
+            seen.add(cid)
+            ids.append(cid)
+    return ids
+
+
+async def get_chapter_list(session, course_url) -> dict:
+    """给前端用的章节清单：[{id, title}]，供用户勾选部分章节下载。"""
+    try:
+        params = await get_course_params(session, course_url)
+    except Exception as exc:
+        return {"status": False, "message": f"解析课程参数失败（{type(exc).__name__}: {exc}）"}
+
+    if not params.get('courseid') or not params.get('clazzid'):
+        return {"status": False, "message": "没能从课程链接里解析出 courseid/clazzid，可能是登录态失效了，请重新登录"}
+
+    tree = await _fetch_chapter_page(session, params)
+    chapters, seen = [], set()
+    for node in _iter_chapter_nodes(tree):
+        cid = _chapter_id(node)
+        if not cid or cid in seen:
+            continue
+        seen.add(cid)
+        title = _chapter_title(node) or f"章节 {cid}"
+        chapters.append({"id": cid, "title": title})
+
+    if not chapters:
+        return {"status": False,
+                "message": "章节页里没解析到 chapter_item，可能是登录态失效或页面结构又变了"}
+    return {"status": True, "chapters": chapters, "count": len(chapters)}
 
 
 async def get_resource_page(session, params):
@@ -202,8 +320,9 @@ async def login_task(session, phone, pwd):
     return {"status": True, "courses": courses_info}
 
 
-async def download_task(session, course_url, content_type, save_home_path):
+async def download_task(session, course_url, content_type, save_home_path, chapter_ids=None):
     # content_type = chapter / resource
+    # chapter_ids: 只下这几章（前端勾选的结果）；为空则整门课
     # 先检查下保存路径有没有问题!
     # 如果有扩展名视为文件路径
     if os.path.isfile(save_home_path) or os.path.splitext(save_home_path)[1]:
@@ -214,44 +333,78 @@ async def download_task(session, course_url, content_type, save_home_path):
             os.makedirs(save_home_path)
         except OSError as e:
             return f"无法创建新目录:{e}"
+
+    # 先探一下这个目录到底能不能写：否则要等整门课的链接都取完，才在写第一个文件时炸
+    probe_path = os.path.join(save_home_path, '.xxt_write_test')
+    try:
+        with open(probe_path, 'wb') as probe:
+            probe.write(b'0')
+        os.remove(probe_path)
+    except OSError as e:
+        return (f"保存目录不可写（{type(e).__name__}: {e}）\n"
+                f"可能原因：① 同名的文件正在被其他程序占用；"
+                f"② 被 Windows「受控文件夹访问」这类安全策略拦截；③ 当前用户对目录没有写权限。\n"
+                f"建议换一个自己新建的、确认可写的目录再试。")
     # 请求指定课程url获取新的请求参数
     params = await get_course_params(session, course_url)
     print("params: ", params)
+    if not params.get('courseid') or not params.get('clazzid'):
+        return "没能从课程链接里解析出 courseid/clazzid，请重新登录后再试"
     # 章节页面需要多一步获取konwledgeid再得到objectid
     if content_type == "chapter":
-        # 使用参数构造获取所有章节id的请求
-        knowledgeids: list = await get_chapter_page(session, params)
+        if chapter_ids:
+            knowledgeids = [str(cid).strip() for cid in chapter_ids if str(cid).strip()]
+            print("用户勾选的章节: ", knowledgeids)
+        else:
+            # 使用参数构造获取所有章节id的请求
+            knowledgeids = await get_chapter_page(session, params)
+            print("knowledgeids: ", knowledgeids)
         if not knowledgeids:
             return "未找到有效章节！"
-        print("knowledgeids: ", knowledgeids)
         # 每个章节分别发送请求
         objectid_tasks = []
         for knowid in knowledgeids:
             _params = {"courseId": params["courseid"],
-                       "knowledgeId": knowid.strip('cur')}
+                       "knowledgeId": str(knowid).strip('cur')}
             objectid_tasks.append(get_chapter_objectid(session, _params))
-        objectid_list = await asyncio.gather(*objectid_tasks)
+        objectid_list = await asyncio.gather(*objectid_tasks, return_exceptions=True)
     elif content_type == "resource":
         objectid_list = await get_resource_page(session, params)
-    if not any(objectid_list):
+    else:
+        return f"未知的下载类型: {content_type}"
+
+    if not any(x for x in objectid_list if isinstance(x, str)):
         return "未找到有效课件！"
     print(objectid_list)
 
     # 获取下载地址和文件名
     pdf_info_task = []
     for objectid in objectid_list:
-        if objectid:
+        if objectid and isinstance(objectid, str):
             pdf_info_task.append(get_pdf_info(session, objectid))
-    pdf_name_url_list = await asyncio.gather(*pdf_info_task)
+    pdf_name_url_list = await asyncio.gather(*pdf_info_task, return_exceptions=True)
     print(pdf_name_url_list)
     # 下载所有文件
     download_tasks = []
     name_url: None | tuple
     for name_url in pdf_name_url_list:
-        if name_url:
+        if isinstance(name_url, tuple) and len(name_url) == 2:
             filename, pdf_url = name_url
             download_tasks.append(download_pdf(session, save_home_path, filename, pdf_url))
-    await asyncio.gather(*download_tasks)
+    if not download_tasks:
+        return "没找到可下载的 PDF：这门课的课件可能不是 PDF 格式（当前只支持 PDF）"
+
+    results = await asyncio.gather(*download_tasks, return_exceptions=True)
+    ok = sum(1 for r in results if not isinstance(r, BaseException))
+    failed = [r for r in results if isinstance(r, BaseException)]
+    print(f"下载完成 {ok} 个，失败 {len(failed)} 个")
+    if ok == 0:
+        first = failed[0] if failed else "未知错误"
+        return f"下载全部失败（{type(first).__name__}: {first}）"
+    if failed:
+        first = failed[0]
+        return f"部分文件失败（{ok} 成功 / {len(failed)} 失败，首个错误 {type(first).__name__}: {first}）"
+    return None
 
 
 async def main(phone, pwd, path):

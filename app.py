@@ -2,9 +2,11 @@ from fastapi import FastAPI, Request, Depends
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
-from XXT_download_file import login, download_task, get_qrcode, check_qrcode_status, get_all_course_inf
+from XXT_download_file import (login, download_task, get_qrcode, check_qrcode_status,
+                               get_all_course_inf, get_chapter_list)
 import aiohttp
 # import asyncio
+import traceback
 import webbrowser
 import threading
 
@@ -42,6 +44,16 @@ async def read_root():
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
+# 改了前端文件后浏览器老吃缓存，会出现「代码已修但页面还是旧的」，
+# 静态资源统一禁掉缓存（本地小工具，每次重新校验的开销可以忽略）
+@app.middleware("http")
+async def no_static_cache(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/static") or request.url.path == "/":
+        response.headers["Cache-Control"] = "no-store, must-revalidate"
+    return response
+
+
 # 二维码登录相关路由
 @app.get("/get_qrcode")
 async def get_qrcode_route(session: aiohttp.ClientSession = Depends(get_session)):
@@ -70,17 +82,32 @@ async def get_courses_route(session: aiohttp.ClientSession = Depends(get_session
     return JSONResponse(content=result)
 
 
+# 章节清单：前端用来做「选哪些章」的多选列表
+@app.get("/get_chapters")
+async def get_chapters_route(url: str, session: aiohttp.ClientSession = Depends(get_session)):
+    try:
+        result = await get_chapter_list(session, url)
+        return JSONResponse(content=result)
+    except Exception as e:
+        traceback.print_exc()
+        return JSONResponse(content={"status": False,
+                                     "message": f"{type(e).__name__}: {e}"})
+
+
 @app.post("/download")
 async def download_route(request: Request, session: aiohttp.ClientSession = Depends(get_session)):
     data = await request.json()
     courseUrl = data.get("url")
     content_type = data.get("type")
     savePath = data.get("path")
+    chapters = data.get("chapters") or None
     try:
-        result = await download_task(session, courseUrl, content_type, savePath)
+        result = await download_task(session, courseUrl, content_type, savePath, chapters)
         return JSONResponse(content={"message": result})
     except Exception as e:
-        return JSONResponse(content={"message": str(e)})
+        # 控制台留下完整堆栈，页面只回一句可读的原因
+        traceback.print_exc()
+        return JSONResponse(content={"message": f"{type(e).__name__}: {e}"})
 
 
 def open_browser():
